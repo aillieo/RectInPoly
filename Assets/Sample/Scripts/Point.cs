@@ -6,19 +6,20 @@
 
 namespace Game
 {
-    using System;
     using UnityEngine;
 
     [ExecuteAlways]
-    public class Point : MonoBehaviour
+    internal class Point : MonoBehaviour
     {
-        [NonSerialized]
-        public bool positionDirty = true;
-
         private Camera mainCamera;
 
         private float zScreen;
         private Vector3 draggingStartOffset;
+
+        public static implicit operator Vector3(Point point)
+        {
+            return point.transform.position;
+        }
 
         private void OnEnable()
         {
@@ -37,7 +38,6 @@ namespace Game
             Vector3 newPosition = this.GetMouseWorldPos() + this.draggingStartOffset;
             newPosition.z = 0;
             this.transform.position = newPosition;
-            this.positionDirty = true;
         }
 
         private Vector3 GetMouseWorldPos()

@@ -6,16 +6,24 @@
 
 namespace AillieoUtils
 {
-    using System.Collections;
+    using System;
     using System.Collections.Generic;
     using System.Runtime.CompilerServices;
     using UnityEngine;
 
     public static class LargestRectInPolygon
     {
-        public const int intersectFlag = 0b0001;
-        public const int interiorFlag = 0b0010;
-        public const int exteriorFlag = 0b0100;
+        private const byte intersectFlag = 0b0010;
+        private const byte interiorFlag = 0b0001;
+        private const byte exteriorFlag = 0b0100;
+
+        [Flags]
+        public enum SubdivideMode
+        {
+            None = 0,
+            MidPoint = 1,
+            Intersection = 1 << 1,
+        }
 
         public static bool IsClockwise(IList<Vector2> points)
         {
@@ -68,23 +76,48 @@ namespace AillieoUtils
             return true;
         }
 
-        public static Rect Find(IList<Vector2> polygon, int subDivisions)
+        public static Rect Find(IList<Vector2> polygon)
         {
-            CalculateGrids(polygon, out var xCoords, out var yCoords, subDivisions);
+            return Find(polygon, SubdivideMode.MidPoint | SubdivideMode.Intersection, 2);
+        }
+
+        public static Rect Find(IList<Vector2> polygon, SubdivideMode subdivideMode, int subdivisions)
+        {
+            CalculateGrids(polygon, subdivideMode, subdivisions, out var xCoords, out var yCoords);
             PolygonGridsIntersection(polygon, xCoords, yCoords, out var graph);
             CalculateLargestInteriorRectangle(xCoords, yCoords, graph, out Rect rect);
             return rect;
         }
 
-        public static Rect Find(IList<Vector2> polygon, int subDivisions, out float[] xCoords, out float[] yCoords, out int[,] graph)
+        public static Rect Find(IList<Vector2> polygon, out float[] xCoords, out float[] yCoords, out byte[,] graph)
         {
-            CalculateGrids(polygon, out xCoords, out yCoords, subDivisions);
+            return Find(polygon, SubdivideMode.MidPoint | SubdivideMode.Intersection, 2, out xCoords, out yCoords, out graph);
+        }
+
+        public static Rect Find(IList<Vector2> polygon, SubdivideMode subdivideMode, int subdivisions, out float[] xCoords, out float[] yCoords, out byte[,] graph)
+        {
+            CalculateGrids(polygon, subdivideMode, subdivisions, out xCoords, out yCoords);
             PolygonGridsIntersection(polygon, xCoords, yCoords, out graph);
             CalculateLargestInteriorRectangle(xCoords, yCoords, graph, out Rect rect);
+
+            var width = graph.GetLength(0);
+            var height = graph.GetLength(1);
+
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    if (graph[x, y] != interiorFlag)
+                    {
+                        graph[x, y] = 0;
+                    }
+                }
+            }
+
             return rect;
         }
 
-        private static void CalculateGrids(IList<Vector2> polygon, out float[] xCoords, out float[] yCoords, int subDivisions)
+        private static void CalculateGrids(IList<Vector2> polygon, SubdivideMode subdivideMode, int subdivisions, out float[] xCoords, out float[] yCoords)
         {
             var pointCount = polygon.Count;
 
@@ -103,57 +136,61 @@ namespace AillieoUtils
             RemoveDuplicatedCoordFromSortedList(yCoordsList);
 
             // 根据需要更进一步细分网格
-            if (subDivisions == 1)
+            for (var n = 0; n < subdivisions; n++)
             {
-                // midpoints
-                for (var l = xCoordsList.Count - 1; l > 0; l--)
+                if ((subdivideMode & SubdivideMode.MidPoint) != 0)
                 {
-                    var mid = (xCoordsList[l] + xCoordsList[l - 1]) * 0.5f;
-                    xCoordsList.Insert(l, mid);
-                }
-
-                for (var l = yCoordsList.Count - 1; l > 0; l--)
-                {
-                    var mid = (yCoordsList[l] + yCoordsList[l - 1]) * 0.5f;
-                    yCoordsList.Insert(l, mid);
-                }
-            }
-            else if (subDivisions == 2)
-            {
-                // project Points
-                // 遍历顶点流 每个edge 与x 和 y 判断是否交点 如果有 则在列表中加入交点
-                var newXCoords = new List<float>();
-                var newYCoords = new List<float>();
-                for (var i = 0; i < pointCount; i++)
-                {
-                    var edgeStart = polygon[i];
-                    var edgeEnd = polygon[(i + 1) % pointCount];
-                    foreach (var x in xCoordsList)
+                    // midpoints
+                    for (var l = xCoordsList.Count - 1; l > 0; l--)
                     {
-                        if ((x - edgeEnd.x) * (x - edgeStart.x) < 0)
-                        {
-                            var newY = Mathf.Lerp(edgeStart.y, edgeEnd.y, (edgeEnd.x - x) / (edgeEnd.x - edgeStart.x));
-                            newYCoords.Add(newY);
-                        }
+                        var mid = (xCoordsList[l] + xCoordsList[l - 1]) * 0.5f;
+                        xCoordsList.Insert(l, mid);
                     }
 
-                    foreach (var y in yCoordsList)
+                    for (var l = yCoordsList.Count - 1; l > 0; l--)
                     {
-                        if ((y - edgeEnd.y) * (y - edgeStart.y) < 0)
-                        {
-                            var newX = Mathf.Lerp(edgeStart.x, edgeEnd.x, (edgeEnd.y - y) / (edgeEnd.y - edgeStart.y));
-                            newXCoords.Add(newX);
-                        }
+                        var mid = (yCoordsList[l] + yCoordsList[l - 1]) * 0.5f;
+                        yCoordsList.Insert(l, mid);
                     }
                 }
 
-                xCoordsList.AddRange(newXCoords);
-                yCoordsList.AddRange(newYCoords);
-                xCoordsList.Sort();
-                yCoordsList.Sort();
+                if ((subdivideMode & SubdivideMode.Intersection) != 0)
+                {
+                    // project Points
+                    // 遍历顶点流 每个edge 与x 和 y 判断是否交点 如果有 则在列表中加入交点
+                    var newXCoords = new List<float>();
+                    var newYCoords = new List<float>();
+                    for (var i = 0; i < pointCount; i++)
+                    {
+                        var edgeStart = polygon[i];
+                        var edgeEnd = polygon[(i + 1) % pointCount];
+                        foreach (var x in xCoordsList)
+                        {
+                            if ((x - edgeEnd.x) * (x - edgeStart.x) < 0)
+                            {
+                                var newY = Mathf.Lerp(edgeStart.y, edgeEnd.y, (edgeEnd.x - x) / (edgeEnd.x - edgeStart.x));
+                                newYCoords.Add(newY);
+                            }
+                        }
 
-                RemoveDuplicatedCoordFromSortedList(xCoordsList);
-                RemoveDuplicatedCoordFromSortedList(yCoordsList);
+                        foreach (var y in yCoordsList)
+                        {
+                            if ((y - edgeEnd.y) * (y - edgeStart.y) < 0)
+                            {
+                                var newX = Mathf.Lerp(edgeStart.x, edgeEnd.x, (edgeEnd.y - y) / (edgeEnd.y - edgeStart.y));
+                                newXCoords.Add(newX);
+                            }
+                        }
+                    }
+
+                    xCoordsList.AddRange(newXCoords);
+                    yCoordsList.AddRange(newYCoords);
+                    xCoordsList.Sort();
+                    yCoordsList.Sort();
+
+                    RemoveDuplicatedCoordFromSortedList(xCoordsList);
+                    RemoveDuplicatedCoordFromSortedList(yCoordsList);
+                }
             }
 
             xCoords = xCoordsList.ToArray();
@@ -171,9 +208,9 @@ namespace AillieoUtils
             }
         }
 
-        private static void PolygonGridsIntersection(IList<Vector2> polygon, float[] xGrids, float[] yGrids, out int[,] graph)
+        private static void PolygonGridsIntersection(IList<Vector2> polygon, float[] xGrids, float[] yGrids, out byte[,] graph)
         {
-            graph = new int[xGrids.Length - 1, yGrids.Length - 1];
+            graph = new byte[xGrids.Length - 1, yGrids.Length - 1];
 
             // 遍历polygon的每条边
             for (var i = 0; i < polygon.Count; i++)
@@ -289,6 +326,10 @@ namespace AillieoUtils
                         {
                             graph[x, y] |= intersectFlag;
                         }
+                        else
+                        {
+                            graph[x, y] |= interiorFlag;
+                        }
                     }
                 }
             }
@@ -296,21 +337,24 @@ namespace AillieoUtils
             CalculateInteriorGrids(graph);
         }
 
-        private static void CalculateInteriorGrids(int[,] graph)
+        private static void CalculateInteriorGrids(byte[,] graph)
         {
             var width = graph.GetLength(0);
             var height = graph.GetLength(1);
 
-            // 1. 标记所有边界的相交网格单元为外部区域
+            // 1. 标记所有边界的未检测格子为外部区域
+            var intersectOrInterior = intersectFlag | interiorFlag;
+            var anyFlag = intersectFlag | interiorFlag | exteriorFlag;
+
             // 1.1 遍历上下边界
             for (var x = 0; x < width; x++)
             {
-                if ((graph[x, 0] & intersectFlag) == 0)
+                if ((graph[x, 0] & intersectOrInterior) == 0)
                 {
                     graph[x, 0] |= exteriorFlag;
                 }
 
-                if ((graph[x, height - 1] & intersectFlag) == 0)
+                if ((graph[x, height - 1] & intersectOrInterior) == 0)
                 {
                     graph[x, height - 1] |= exteriorFlag;
                 }
@@ -319,12 +363,12 @@ namespace AillieoUtils
             // 1.2 遍历左右边界
             for (var y = 0; y < height; y++)
             {
-                if ((graph[0, y] & intersectFlag) == 0)
+                if ((graph[0, y] & intersectOrInterior) == 0)
                 {
                     graph[0, y] |= exteriorFlag;
                 }
 
-                if ((graph[width - 1, y] & intersectFlag) == 0)
+                if ((graph[width - 1, y] & intersectOrInterior) == 0)
                 {
                     graph[width - 1, y] |= exteriorFlag;
                 }
@@ -336,15 +380,15 @@ namespace AillieoUtils
             {
                 changed = false;
 
-                // 2.1 遍历所有单元格 检查与外部区域相邻的单元格
+                // 2.1 遍历所有格子 检查与外部区域相邻的单元格
                 for (var x = 1; x < width - 1; x++)
                 {
                     for (var y = 1; y < height - 1; y++)
                     {
-                        // 2.2 如果该单元格与多边形相交 并且没有被标记为外部
-                        if ((graph[x, y] & intersectFlag) == 0 && (graph[x, y] & exteriorFlag) == 0)
+                        // 2.2 如果该单元格没有任何标记 未检测
+                        if ((graph[x, y] & anyFlag) == 0)
                         {
-                            // 如果与相邻的任何外部区域相邻 则标记为外部
+                            // 如果有相邻的外部区域 则标记为外部
                             if ((graph[x - 1, y] & exteriorFlag) != 0 ||
                                 (graph[x + 1, y] & exteriorFlag) != 0 ||
                                 (graph[x, y - 1] & exteriorFlag) != 0 ||
@@ -360,14 +404,14 @@ namespace AillieoUtils
             while (changed);
 
             // 3. 标记所有剩余的相交单元格为内部区域
+            var intersectOrExterior = intersectFlag | exteriorFlag;
             for (var x = 1; x < width - 1; x++)
             {
                 for (var y = 1; y < height - 1; y++)
                 {
-                    // 如果格子不与多边形相交 且未被标记为外部
-                    if ((graph[x, y] & intersectFlag) == 0 && (graph[x, y] & exteriorFlag) == 0)
+                    if ((graph[x, y] & intersectOrExterior) == 0)
                     {
-                        graph[x, y] |= interiorFlag; // 标记为内部
+                        graph[x, y] |= interiorFlag;
                     }
                 }
             }
@@ -421,7 +465,7 @@ namespace AillieoUtils
             return dotProduct > 0 ? perpendicular : -perpendicular;
         }
 
-        private static void CalculateLargestInteriorRectangle(float[] xCoords, float[] yCoords, int[,] graph, out Rect rect)
+        private static void CalculateLargestInteriorRectangle(float[] xCoords, float[] yCoords, byte[,] graph, out Rect rect)
         {
             rect = default;
 
