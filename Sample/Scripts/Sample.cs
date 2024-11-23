@@ -9,14 +9,19 @@ namespace Game
     using System.Linq;
     using AillieoUtils;
     using UnityEngine;
+    using SubdivideMode = AillieoUtils.LargestRectInPolygon.SubdivideMode;
 
     [ExecuteAlways]
-    public class Sample : MonoBehaviour
+    internal class Sample : MonoBehaviour
     {
-        [Range(0, 2)]
-        public int subDivisions = 2;
+        public SubdivideMode subdivideMode = SubdivideMode.Intersection & SubdivideMode.MidPoint;
+
+        [Range(0, 4)]
+        public int subdivisions = 2;
 
         public bool drawGraph;
+
+        private static readonly Vector3[] fourPoints = new Vector3[4];
 
         private Point[] points;
 
@@ -26,23 +31,66 @@ namespace Game
 
         private GUIStyle labelStyle;
 
+        private static void DrawCells(float[] xs, float[] ys, byte[,] cells)
+        {
+            Color backup = Gizmos.color;
+
+            for (var x = 0; x + 1 < xs.Length; x++)
+            {
+                for (var y = 0; y + 1 < ys.Length; y++)
+                {
+                    var index = cells[x, y];
+
+                    fourPoints[0] = new Vector2(xs[x], ys[y]);
+                    fourPoints[1] = new Vector2(xs[x + 1], ys[y]);
+                    fourPoints[2] = new Vector2(xs[x + 1], ys[y + 1]);
+                    fourPoints[3] = new Vector2(xs[x], ys[y + 1]);
+
+                    Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.1f);
+                    Gizmos.DrawLineStrip(fourPoints, true);
+
+                    if (index == 1)
+                    {
+                        Gizmos.color = new Color(0.8f, 0.8f, 0.8f, 0.1f);
+                        Gizmos.DrawCube((fourPoints[0] + fourPoints[2]) / 2, fourPoints[2] - fourPoints[0]);
+                    }
+                }
+            }
+
+            Gizmos.color = backup;
+        }
+
         private void OnEnable()
         {
             this.mainCamera = Camera.main;
 
             this.points = this.GetComponentsInChildren<Point>();
             this.lineRenderer = this.GetComponent<LineRenderer>();
+
+            this.CheckAndUpdateLineRenderer(true);
         }
 
         private void Update()
         {
+            this.CheckAndUpdateLineRenderer(false);
+        }
+
+        private void CheckAndUpdateLineRenderer(bool forceUpdate)
+        {
             var positionChanged = false;
-            foreach (var point in this.points)
+            if (forceUpdate)
             {
-                if (point.positionDirty)
+                positionChanged = true;
+            }
+            else
+            {
+                foreach (var point in this.points)
                 {
-                    point.positionDirty = false;
-                    positionChanged = true;
+                    if (point.transform.hasChanged)
+                    {
+                        point.transform.hasChanged = false;
+                        positionChanged = true;
+                    }
                 }
             }
 
@@ -53,57 +101,41 @@ namespace Game
                 {
                     this.lineRenderer.SetPosition(i, this.points[i].transform.position);
                 }
-            }
-        }
 
-        private static void DrawCells(float[] xs, float[] ys, int[,] cells)
-        {
-            Color backup = Gizmos.color;
-            Gizmos.color = new Color(1, 1, 1, 0.1f);
+                var polygon = this.points.Select(p => (Vector2)(Vector3)p).ToArray();
+                var valid = LargestRectInPolygon.IsValidPolygon(polygon);
 
-            for (var x = 0; x + 1 < xs.Length; x++)
-            {
-                for (var y = 0; y + 1 < ys.Length; y++)
+                Color lineColor = Color.white;
+                if (!valid)
                 {
-                    var index = cells[x, y];
-
-                    var fourPoints = new Vector3[4]
+                    lineColor = Color.red;
+                }
+                else
+                {
+                    var clockwise = LargestRectInPolygon.IsClockwise(polygon);
+                    if (!clockwise)
                     {
-                        new Vector2(xs[x], ys[y]),
-                        new Vector2(xs[x + 1], ys[y]),
-                        new Vector2(xs[x + 1], ys[y + 1]),
-                        new Vector2(xs[x], ys[y + 1]),
-                    };
-
-                    if ((index & LargestRectInPolygon.interiorFlag) != 0)
-                    {
-                        Gizmos.color = new Color(1, 0, 0, 0.1f);
-                        Gizmos.DrawLineStrip(fourPoints, true);
-                        Gizmos.DrawCube((fourPoints[0] + fourPoints[2]) / 2, fourPoints[2] - fourPoints[0]);
-                    }
-
-                    if ((index & LargestRectInPolygon.exteriorFlag) != 0)
-                    {
-                        Gizmos.color = new Color(0, 1, 1, 0.1f);
-                        Gizmos.DrawLineStrip(fourPoints, true);
-                        Gizmos.DrawCube((fourPoints[0] + fourPoints[2]) / 2, fourPoints[2] - fourPoints[0]);
-                    }
-
-                    if ((index & LargestRectInPolygon.intersectFlag) != 0)
-                    {
-                        Gizmos.color = new Color(1, 1, 1, 0.2f);
-                        Gizmos.DrawLineStrip(fourPoints, true);
-                        Gizmos.DrawCube((fourPoints[0] + fourPoints[2]) / 2, fourPoints[2] - fourPoints[0]);
+                        lineColor = Color.blue;
                     }
                 }
-            }
 
-            Gizmos.color = backup;
+                // this.lineRenderer.startColor = lineColor;
+                // this.lineRenderer.endColor = lineColor;
+                if (Application.isEditor && !Application.isPlaying)
+                {
+                    this.lineRenderer.sharedMaterial.color = lineColor;
+                }
+                else
+                {
+                    this.lineRenderer.material.color = lineColor;
+                }
+            }
         }
 
         private void OnDrawGizmos()
         {
-            var polygon = this.points.Select(p => (Vector2)p.transform.position).ToArray();
+            var polygonV3 = this.points.Select(p => (Vector3)p).ToArray();
+            var polygon = polygonV3.Select(v3 => (Vector2)v3).ToArray();
 
             var valid = LargestRectInPolygon.IsValidPolygon(polygon);
 
@@ -112,35 +144,27 @@ namespace Game
             {
                 Gizmos.color = Color.red;
             }
-
-            var clockwise = LargestRectInPolygon.IsClockwise(polygon);
-            if (!clockwise)
+            else
             {
-                Gizmos.color = Color.blue;
-            }
-
-            Gizmos.color = backup;
-
-            if (valid)
-            {
+                var clockwise = LargestRectInPolygon.IsClockwise(polygon);
                 if (!clockwise)
                 {
                     polygon = polygon.Reverse().ToArray();
+                    Gizmos.color = Color.blue;
                 }
+            }
 
-                Rect rect = default;
+            Gizmos.DrawLineStrip(polygonV3, true);
+
+            Gizmos.color = backup;
+
+            if (valid && this.drawGraph)
+            {
                 if (this.drawGraph)
                 {
-                    rect = LargestRectInPolygon.Find(polygon, this.subDivisions, out var x, out var y, out var graph);
+                    var rect = LargestRectInPolygon.Find(polygon, this.subdivideMode, this.subdivisions, out var x, out var y, out var graph);
                     DrawCells(x, y, graph);
                 }
-                else
-                {
-                    rect = LargestRectInPolygon.Find(polygon, this.subDivisions);
-                }
-
-                Gizmos.color = new Color(1, 1, 0, 0.5f);
-                //Gizmos.DrawCube(rect.center, rect.size);
             }
         }
 
@@ -164,10 +188,10 @@ namespace Game
 
             // ui
             var labelRect = new Rect(0, 0, 200, 50);
-            GUI.Label(labelRect, $"Sub Divisions:{this.subDivisions}", this.labelStyle);
+            GUI.Label(labelRect, $"Sub Divisions:{this.subdivisions}", this.labelStyle);
             var sliderRect = new Rect(0, 50, 200, 50);
-            var sliderValue = GUI.HorizontalSlider(sliderRect, this.subDivisions, 0, 2);
-            this.subDivisions = Mathf.Clamp((int)sliderValue, 0, 2);
+            var sliderValue = GUI.HorizontalSlider(sliderRect, this.subdivisions, 0, 4);
+            this.subdivisions = Mathf.Clamp((int)sliderValue, 0, 4);
 
             var polygon = this.points.Select(p => (Vector2)p.transform.position).ToArray();
 
@@ -192,11 +216,11 @@ namespace Game
                 Rect rect = default;
                 if (this.drawGraph)
                 {
-                    rect = LargestRectInPolygon.Find(polygon, this.subDivisions, out var x, out var y, out var graph);
+                    rect = LargestRectInPolygon.Find(polygon, this.subdivideMode, this.subdivisions, out var x, out var y, out var graph);
                 }
                 else
                 {
-                    rect = LargestRectInPolygon.Find(polygon, this.subDivisions);
+                    rect = LargestRectInPolygon.Find(polygon, this.subdivideMode, this.subdivisions);
                 }
 
                 var lb = rect.position;
@@ -210,7 +234,10 @@ namespace Game
                 var yMax = Mathf.Max(lbScreen.y, rtScreen.y);
 
                 var guiRect = new Rect(xMin, yMin, xMax - xMin, yMax - yMin);
-                GUI.DrawTexture(guiRect, Texture2D.grayTexture);
+                var guiColor = GUI.color;
+                GUI.color = new Color(0.2f, 0.75f, 0.2f, 0.9f);
+                GUI.DrawTexture(guiRect, Texture2D.whiteTexture);
+                GUI.color = guiColor;
             }
         }
 
