@@ -325,10 +325,14 @@ namespace AillieoUtils
                         if (Vector2.Dot(v1, v2) <= 0)
                         {
                             graph[x, y] |= intersectFlag;
+                            graph[x, y] &= unchecked((byte)(~interiorFlag));
                         }
                         else
                         {
-                            graph[x, y] |= interiorFlag;
+                            if ((graph[x, y] & intersectFlag) == 0)
+                            {
+                                graph[x, y] |= interiorFlag;
+                            }
                         }
                     }
                 }
