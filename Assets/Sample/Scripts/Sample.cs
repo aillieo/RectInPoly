@@ -6,18 +6,17 @@
 
 namespace Game
 {
+    using System;
     using System.Linq;
     using AillieoUtils;
     using UnityEngine;
+    using UnityEngine.Profiling;
     using SubdivideMode = AillieoUtils.LargestRectInPolygon.SubdivideMode;
 
     [ExecuteAlways]
     internal class Sample : MonoBehaviour
     {
-        public SubdivideMode subdivideMode = SubdivideMode.Intersection & SubdivideMode.MidPoint;
-
-        [Range(0, 4)]
-        public int subdivisions = 2;
+        public SubdivideMode subdivideMode = SubdivideMode.CC;
 
         public bool drawGraph;
 
@@ -30,6 +29,14 @@ namespace Game
         private Camera mainCamera;
 
         private GUIStyle labelStyle;
+
+        private bool positionChanged = true;
+        private bool subdivideModeChanged = true;
+
+        private Rect rectResult;
+        private float[] xGridsResult;
+        private float[] yGridsResult;
+        private byte[,] graphResult;
 
         private static void DrawCells(float[] xs, float[] ys, byte[,] cells)
         {
@@ -75,12 +82,48 @@ namespace Game
             this.CheckAndUpdateLineRenderer(false);
         }
 
+        private void LateUpdate()
+        {
+            if (!this.positionChanged && !this.subdivideModeChanged)
+            {
+                return;
+            }
+
+            this.positionChanged = false;
+            this.subdivideModeChanged = false;
+
+            var polygonV3 = this.points.Select(p => (Vector3)p).ToArray();
+            var polygon = polygonV3.Select(v3 => (Vector2)v3).ToArray();
+
+            var valid = LargestRectInPolygon.IsValidPolygon(polygon);
+
+            if (valid)
+            {
+                var clockwise = LargestRectInPolygon.IsClockwise(polygon);
+                if (!clockwise)
+                {
+                    polygon = polygon.Reverse().ToArray();
+                }
+
+                Profiler.BeginSample("LargestRectInPolygon.Find");
+                this.rectResult = LargestRectInPolygon.Find(polygon, this.subdivideMode, out this.xGridsResult, out this.yGridsResult, out this.graphResult);
+                Profiler.EndSample();
+            }
+            else
+            {
+                this.rectResult = default;
+                this.xGridsResult = null;
+                this.yGridsResult = null;
+                this.graphResult = null;
+            }
+        }
+
         private void CheckAndUpdateLineRenderer(bool forceUpdate)
         {
-            var positionChanged = false;
+            var pointsChanged = false;
             if (forceUpdate)
             {
-                positionChanged = true;
+                pointsChanged = true;
             }
             else
             {
@@ -89,12 +132,12 @@ namespace Game
                     if (point.transform.hasChanged)
                     {
                         point.transform.hasChanged = false;
-                        positionChanged = true;
+                        pointsChanged = true;
                     }
                 }
             }
 
-            if (positionChanged)
+            if (pointsChanged)
             {
                 this.lineRenderer.positionCount = this.points.Length;
                 for (var i = 0; i < this.points.Length; i++)
@@ -130,6 +173,11 @@ namespace Game
                     this.lineRenderer.material.color = lineColor;
                 }
             }
+
+            if (pointsChanged)
+            {
+                this.positionChanged = true;
+            }
         }
 
         private void OnDrawGizmos()
@@ -158,18 +206,41 @@ namespace Game
 
             Gizmos.color = backup;
 
-            if (valid && this.drawGraph)
+            if (this.drawGraph)
             {
-                if (this.drawGraph)
+                if (this.xGridsResult != null && this.yGridsResult != null && this.graphResult != null)
                 {
-                    var rect = LargestRectInPolygon.Find(polygon, this.subdivideMode, this.subdivisions, out var x, out var y, out var graph);
-                    DrawCells(x, y, graph);
+                    DrawCells(this.xGridsResult, this.yGridsResult, this.graphResult);
                 }
             }
         }
 
         private void OnGUI()
         {
+            // draw rect in polygon
+            var polygon = this.points.Select(p => (Vector2)p.transform.position).ToArray();
+            var valid = LargestRectInPolygon.IsValidPolygon(polygon);
+            var clockwise = LargestRectInPolygon.IsClockwise(polygon);
+
+            if (valid)
+            {
+                var lb = this.rectResult.position;
+                var rt = this.rectResult.position + this.rectResult.size;
+                var lbScreen = this.WorldToGUIPosition(lb);
+                var rtScreen = this.WorldToGUIPosition(rt);
+
+                var xMin = Mathf.Min(lbScreen.x, rtScreen.x);
+                var xMax = Mathf.Max(lbScreen.x, rtScreen.x);
+                var yMin = Mathf.Min(lbScreen.y, rtScreen.y);
+                var yMax = Mathf.Max(lbScreen.y, rtScreen.y);
+
+                var guiRect = new Rect(xMin, yMin, xMax - xMin, yMax - yMin);
+                var guiColor = GUI.color;
+                GUI.color = new Color(0.2f, 0.75f, 0.2f, 0.9f);
+                GUI.DrawTexture(guiRect, Texture2D.whiteTexture);
+                GUI.color = guiColor;
+            }
+
             if (this.labelStyle == null)
             {
                 this.labelStyle = new GUIStyle();
@@ -187,57 +258,14 @@ namespace Game
             }
 
             // ui
-            var labelRect = new Rect(0, 0, 200, 50);
-            GUI.Label(labelRect, $"Sub Divisions:{this.subdivisions}", this.labelStyle);
-            var sliderRect = new Rect(0, 50, 200, 50);
-            var sliderValue = GUI.HorizontalSlider(sliderRect, this.subdivisions, 0, 4);
-            this.subdivisions = Mathf.Clamp((int)sliderValue, 0, 4);
-
-            var polygon = this.points.Select(p => (Vector2)p.transform.position).ToArray();
-
-            var valid = LargestRectInPolygon.IsValidPolygon(polygon);
-
-            if (!valid)
+            var options = Enum.GetNames(typeof(SubdivideMode));
+            var values = (int[])Enum.GetValues(typeof(SubdivideMode));
+            var selectedIndex = Array.IndexOf(values, (int)this.subdivideMode);
+            var newSelectedIndex = GUILayout.SelectionGrid(selectedIndex, options, 3);
+            this.subdivideMode = (SubdivideMode)values.GetValue(newSelectedIndex);
+            if (selectedIndex != newSelectedIndex)
             {
-            }
-
-            var clockwise = LargestRectInPolygon.IsClockwise(polygon);
-            if (!clockwise)
-            {
-            }
-
-            if (valid)
-            {
-                if (!clockwise)
-                {
-                    polygon = polygon.Reverse().ToArray();
-                }
-
-                Rect rect = default;
-                if (this.drawGraph)
-                {
-                    rect = LargestRectInPolygon.Find(polygon, this.subdivideMode, this.subdivisions, out var x, out var y, out var graph);
-                }
-                else
-                {
-                    rect = LargestRectInPolygon.Find(polygon, this.subdivideMode, this.subdivisions);
-                }
-
-                var lb = rect.position;
-                var rt = rect.position + rect.size;
-                var lbScreen = this.WorldToGUIPosition(lb);
-                var rtScreen = this.WorldToGUIPosition(rt);
-
-                var xMin = Mathf.Min(lbScreen.x, rtScreen.x);
-                var xMax = Mathf.Max(lbScreen.x, rtScreen.x);
-                var yMin = Mathf.Min(lbScreen.y, rtScreen.y);
-                var yMax = Mathf.Max(lbScreen.y, rtScreen.y);
-
-                var guiRect = new Rect(xMin, yMin, xMax - xMin, yMax - yMin);
-                var guiColor = GUI.color;
-                GUI.color = new Color(0.2f, 0.75f, 0.2f, 0.9f);
-                GUI.DrawTexture(guiRect, Texture2D.whiteTexture);
-                GUI.color = guiColor;
+                this.subdivideModeChanged = true;
             }
         }
 
@@ -249,6 +277,39 @@ namespace Game
                 Screen.height - screenPosition.y,
                 0);
             return guiPosition;
+        }
+
+        [ContextMenu("PerformanceTesting")]
+        private void PerformanceTesting()
+        {
+            var polygonV3 = this.points.Select(p => (Vector3)p).ToArray();
+            var polygon = polygonV3.Select(v3 => (Vector2)v3).ToArray();
+
+            var valid = LargestRectInPolygon.IsValidPolygon(polygon);
+
+            if (valid)
+            {
+                var clockwise = LargestRectInPolygon.IsClockwise(polygon);
+                if (!clockwise)
+                {
+                    polygon = polygon.Reverse().ToArray();
+                }
+
+                var times = 100;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+
+                for (var i = 1; i < times; i++)
+                {
+                    this.rectResult = LargestRectInPolygon.Find(polygon, this.subdivideMode, out this.xGridsResult, out this.yGridsResult, out this.graphResult);
+                }
+
+                sw.Stop();
+                Debug.Log($"Time cost in mm: {sw.ElapsedMilliseconds / times}");
+            }
+            else
+            {
+                Debug.LogError($"Invalid polygon");
+            }
         }
     }
 }

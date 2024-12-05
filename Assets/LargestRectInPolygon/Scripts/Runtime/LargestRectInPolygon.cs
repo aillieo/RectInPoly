@@ -6,7 +6,6 @@
 
 namespace AillieoUtils
 {
-    using System;
     using System.Collections.Generic;
     using System.Runtime.CompilerServices;
     using UnityEngine;
@@ -17,12 +16,49 @@ namespace AillieoUtils
         private const byte interiorFlag = 0b0001;
         private const byte exteriorFlag = 0b0100;
 
-        [Flags]
+        private static readonly Stack<int> stackReusable = new Stack<int>();
+        private static readonly Stack<List<float>> listsReusable = new Stack<List<float>>();
+
         public enum SubdivideMode
         {
             None = 0,
-            MidPoint = 1,
-            Intersection = 1 << 1,
+            MidPoint = 0b01,
+            CrossingPoint = 0b10,
+
+            MM = MidPoint | MidPoint << 2,
+            MC = MidPoint | CrossingPoint << 2,
+            CM = CrossingPoint | MidPoint << 2,
+            CC = CrossingPoint | CrossingPoint << 2,
+
+            MMM = MidPoint | MidPoint << 2 | MidPoint << 4,
+            MCM = MidPoint | CrossingPoint << 2 | MidPoint << 4,
+            CMM = CrossingPoint | MidPoint << 2 | MidPoint << 4,
+            CCM = CrossingPoint | CrossingPoint << 2 | MidPoint << 4,
+
+            MMC = MidPoint | MidPoint << 2 | CrossingPoint << 4,
+            MCC = MidPoint | CrossingPoint << 2 | CrossingPoint << 4,
+            CMC = CrossingPoint | MidPoint << 2 | CrossingPoint << 4,
+            CCC = CrossingPoint | CrossingPoint << 2 | CrossingPoint << 4,
+
+            MMMM = MidPoint | MidPoint << 2 | MidPoint << 4 | MidPoint << 6,
+            MCMM = MidPoint | CrossingPoint << 2 | MidPoint << 4 | MidPoint << 6,
+            CMMM = CrossingPoint | MidPoint << 2 | MidPoint << 4 | MidPoint << 6,
+            CCMM = CrossingPoint | CrossingPoint << 2 | MidPoint << 4 | MidPoint << 6,
+
+            MMCM = MidPoint | MidPoint << 2 | CrossingPoint << 4 | MidPoint << 6,
+            MCCM = MidPoint | CrossingPoint << 2 | CrossingPoint << 4 | MidPoint << 6,
+            CMCM = CrossingPoint | MidPoint << 2 | CrossingPoint << 4 | MidPoint << 6,
+            CCCM = CrossingPoint | CrossingPoint << 2 | CrossingPoint << 4 | MidPoint << 6,
+
+            MMMC = MidPoint | MidPoint << 2 | MidPoint << 4 | CrossingPoint << 6,
+            MCMC = MidPoint | CrossingPoint << 2 | MidPoint << 4 | CrossingPoint << 6,
+            CMMC = CrossingPoint | MidPoint << 2 | MidPoint << 4 | CrossingPoint << 6,
+            CCMC = CrossingPoint | CrossingPoint << 2 | MidPoint << 4 | CrossingPoint << 6,
+
+            MMCC = MidPoint | MidPoint << 2 | CrossingPoint << 4 | CrossingPoint << 6,
+            MCCC = MidPoint | CrossingPoint << 2 | CrossingPoint << 4 | CrossingPoint << 6,
+            CMCC = CrossingPoint | MidPoint << 2 | CrossingPoint << 4 | CrossingPoint << 6,
+            CCCC = CrossingPoint | CrossingPoint << 2 | CrossingPoint << 4 | CrossingPoint << 6,
         }
 
         public static bool IsClockwise(IList<Vector2> points)
@@ -78,12 +114,12 @@ namespace AillieoUtils
 
         public static Rect Find(IList<Vector2> polygon)
         {
-            return Find(polygon, SubdivideMode.MidPoint | SubdivideMode.Intersection, 2);
+            return Find(polygon, SubdivideMode.CC);
         }
 
-        public static Rect Find(IList<Vector2> polygon, SubdivideMode subdivideMode, int subdivisions)
+        public static Rect Find(IList<Vector2> polygon, SubdivideMode subdivideMode)
         {
-            CalculateGrids(polygon, subdivideMode, subdivisions, out var xCoords, out var yCoords);
+            CalculateGrids(polygon, subdivideMode, out var xCoords, out var yCoords);
             PolygonGridsIntersection(polygon, xCoords, yCoords, out var graph);
             CalculateLargestInteriorRectangle(xCoords, yCoords, graph, out Rect rect);
             return rect;
@@ -91,12 +127,12 @@ namespace AillieoUtils
 
         public static Rect Find(IList<Vector2> polygon, out float[] xCoords, out float[] yCoords, out byte[,] graph)
         {
-            return Find(polygon, SubdivideMode.MidPoint | SubdivideMode.Intersection, 2, out xCoords, out yCoords, out graph);
+            return Find(polygon, SubdivideMode.CC, out xCoords, out yCoords, out graph);
         }
 
-        public static Rect Find(IList<Vector2> polygon, SubdivideMode subdivideMode, int subdivisions, out float[] xCoords, out float[] yCoords, out byte[,] graph)
+        public static Rect Find(IList<Vector2> polygon, SubdivideMode subdivideMode, out float[] xCoords, out float[] yCoords, out byte[,] graph)
         {
-            CalculateGrids(polygon, subdivideMode, subdivisions, out xCoords, out yCoords);
+            CalculateGrids(polygon, subdivideMode, out xCoords, out yCoords);
             PolygonGridsIntersection(polygon, xCoords, yCoords, out graph);
             CalculateLargestInteriorRectangle(xCoords, yCoords, graph, out Rect rect);
 
@@ -117,7 +153,7 @@ namespace AillieoUtils
             return rect;
         }
 
-        private static void CalculateGrids(IList<Vector2> polygon, SubdivideMode subdivideMode, int subdivisions, out float[] xCoords, out float[] yCoords)
+        private static void CalculateGrids(IList<Vector2> polygon, SubdivideMode subdivideMode, out float[] xCoords, out float[] yCoords)
         {
             var pointCount = polygon.Count;
 
@@ -136,9 +172,10 @@ namespace AillieoUtils
             RemoveDuplicatedCoordFromSortedList(yCoordsList);
 
             // 根据需要更进一步细分网格
-            for (var n = 0; n < subdivisions; n++)
+            for (var n = 0; n < 5; n++)
             {
-                if ((subdivideMode & SubdivideMode.MidPoint) != 0)
+                var mode = (SubdivideMode)(((int)subdivideMode >> (n * 2)) & 0b11);
+                if (mode == SubdivideMode.MidPoint)
                 {
                     // midpoints
                     for (var l = xCoordsList.Count - 1; l > 0; l--)
@@ -153,38 +190,56 @@ namespace AillieoUtils
                         yCoordsList.Insert(l, mid);
                     }
                 }
-
-                if ((subdivideMode & SubdivideMode.Intersection) != 0)
+                else if (mode == SubdivideMode.CrossingPoint)
                 {
                     // project Points
                     // 遍历顶点流 每个edge 与x 和 y 判断是否交点 如果有 则在列表中加入交点
-                    var newXCoords = new List<float>();
-                    var newYCoords = new List<float>();
-                    for (var i = 0; i < pointCount; i++)
+                    if (!listsReusable.TryPop(out var newXCoords))
                     {
-                        var edgeStart = polygon[i];
-                        var edgeEnd = polygon[(i + 1) % pointCount];
-                        foreach (var x in xCoordsList)
-                        {
-                            if ((x - edgeEnd.x) * (x - edgeStart.x) < 0)
-                            {
-                                var newY = Mathf.Lerp(edgeStart.y, edgeEnd.y, (edgeEnd.x - x) / (edgeEnd.x - edgeStart.x));
-                                newYCoords.Add(newY);
-                            }
-                        }
-
-                        foreach (var y in yCoordsList)
-                        {
-                            if ((y - edgeEnd.y) * (y - edgeStart.y) < 0)
-                            {
-                                var newX = Mathf.Lerp(edgeStart.x, edgeEnd.x, (edgeEnd.y - y) / (edgeEnd.y - edgeStart.y));
-                                newXCoords.Add(newX);
-                            }
-                        }
+                        newXCoords = new List<float>();
                     }
 
-                    xCoordsList.AddRange(newXCoords);
-                    yCoordsList.AddRange(newYCoords);
+                    if (!listsReusable.TryPop(out var newYCoords))
+                    {
+                        newYCoords = new List<float>();
+                    }
+
+                    try
+                    {
+                        for (var i = 0; i < pointCount; i++)
+                        {
+                            var edgeStart = polygon[i];
+                            var edgeEnd = polygon[(i + 1) % pointCount];
+                            foreach (var x in xCoordsList)
+                            {
+                                if ((x - edgeEnd.x) * (x - edgeStart.x) < 0)
+                                {
+                                    var newY = Mathf.Lerp(edgeStart.y, edgeEnd.y, (edgeEnd.x - x) / (edgeEnd.x - edgeStart.x));
+                                    newYCoords.Add(newY);
+                                }
+                            }
+
+                            foreach (var y in yCoordsList)
+                            {
+                                if ((y - edgeEnd.y) * (y - edgeStart.y) < 0)
+                                {
+                                    var newX = Mathf.Lerp(edgeStart.x, edgeEnd.x, (edgeEnd.y - y) / (edgeEnd.y - edgeStart.y));
+                                    newXCoords.Add(newX);
+                                }
+                            }
+                        }
+
+                        xCoordsList.AddRange(newXCoords);
+                        yCoordsList.AddRange(newYCoords);
+                    }
+                    finally
+                    {
+                        newXCoords.Clear();
+                        newYCoords.Clear();
+                        listsReusable.Push(newXCoords);
+                        listsReusable.Push(newYCoords);
+                    }
+
                     xCoordsList.Sort();
                     yCoordsList.Sort();
 
@@ -222,74 +277,85 @@ namespace AillieoUtils
                 var yStart = p0.y;
                 var yEnd = p1.y;
 
-                var edgeType = 0;
-                if (xStart < xEnd && yEnd > yStart)
+                int edgeType;
+                if (xStart < xEnd)
                 {
-                    edgeType = 1;
+                    if (yEnd > yStart)
+                    {
+                        edgeType = 1;
+                    }
+                    else if (yEnd < yStart)
+                    {
+                        edgeType = 4;
+                    }
+                    else // yEnd == yStart
+                    {
+                        edgeType = 8;
+                    }
                 }
-                else if (xStart > xEnd && yEnd > yStart)
+                else if (xStart > xEnd)
                 {
-                    edgeType = 2;
+                    if (yEnd > yStart)
+                    {
+                        edgeType = 2;
+                    }
+                    else if (yEnd < yStart)
+                    {
+                        edgeType = 3;
+                    }
+                    else // yEnd == yStart
+                    {
+                        edgeType = 6;
+                    }
                 }
-                else if (xStart > xEnd && yEnd < yStart)
+                else // xStart == xEnd
                 {
-                    edgeType = 3;
-                }
-                else if (xStart < xEnd && yEnd < yStart)
-                {
-                    edgeType = 4;
-                }
-                else if (xStart == xEnd && yEnd > yStart)
-                {
-                    edgeType = 5;
-                }
-                else if (xStart > xEnd && yEnd == yStart)
-                {
-                    edgeType = 6;
-                }
-                else if (xStart == xEnd && yEnd < yStart)
-                {
-                    edgeType = 7;
-                }
-                else if (xStart < xEnd && yEnd == yStart)
-                {
-                    edgeType = 8;
+                    if (yEnd > yStart)
+                    {
+                        edgeType = 5;
+                    }
+                    else // yEnd < yStart
+                    {
+                        edgeType = 7;
+                    }
                 }
 
                 Vector2 v1 = -Vector2.Perpendicular(p1 - p0);
                 v1.Normalize();
 
+                var edgeBottomLeftX = Mathf.Min(p0.x, p1.x);
+                var edgeBottomLeftY = Mathf.Min(p0.y, p1.y);
+                var edgeTopRightX = Mathf.Max(p0.x, p1.x);
+                var edgeTopRightY = Mathf.Max(p0.y, p1.y);
+
+                var isHorizontal = p0.y == p1.y;
+                var isVertical = p0.x == p1.x;
+
                 // 遍历每个网格单元
-                for (var x = 0; x < xGrids.Length - 1; x++)
+                for (int x = 0, xlen = xGrids.Length - 1; x < xlen; x++)
                 {
-                    for (var y = 0; y < yGrids.Length - 1; y++)
+                    for (int y = 0, ylen = yGrids.Length - 1; y < ylen; y++)
                     {
                         // 获取网格单元的四个顶点
-                        var gridBottomLeft = new Vector2(xGrids[x], yGrids[y]);
-                        var gridTopLeft = new Vector2(xGrids[x], yGrids[y + 1]);
-                        var gridTopRight = new Vector2(xGrids[x + 1], yGrids[y + 1]);
-                        var gridBottomRight = new Vector2(xGrids[x + 1], yGrids[y]);
+                        var gridBottomLeftX = xGrids[x];
+                        var gridTopRightX = xGrids[x + 1];
+                        var gridBottomLeftY = yGrids[y];
+                        var gridTopRightY = yGrids[y + 1];
 
-                        var edgeBottomLeft = Vector2.Min(p0, p1);
-                        var edgeTopRight = Vector2.Max(p0, p1);
-
-                        var isHorizontal = p0.y == p1.y;
-                        var isVertical = p0.x == p1.x;
-
-                        if (edgeBottomLeft.x <= gridBottomLeft.x && edgeBottomLeft.y <= gridBottomLeft.y
-                            && edgeTopRight.x >= gridTopRight.x && edgeTopRight.y >= gridTopRight.y)
+                        if (edgeBottomLeftX <= gridBottomLeftX && edgeBottomLeftY <= gridBottomLeftY
+                            && edgeTopRightX >= gridTopRightX && edgeTopRightY >= gridTopRightY)
                         {
                             // 格子的包围盒小于edge的包围盒 必相交
                         }
                         else if (isHorizontal &&
-                            edgeBottomLeft.x <= gridBottomLeft.x && edgeTopRight.x >= gridTopRight.x
-                            && (edgeBottomLeft.y == gridBottomLeft.y || edgeTopRight.y == gridTopRight.y))
+                            edgeBottomLeftX <= gridBottomLeftX && edgeTopRightX >= gridTopRightX
+                            && (edgeBottomLeftY == gridBottomLeftY || edgeTopRightY == gridTopRightY))
                         {
                             // edge是格子的上下两边之一
                         }
                         else if (isVertical &&
-                            (edgeBottomLeft.x == gridBottomLeft.x || edgeTopRight.x == gridTopRight.x)
-                            && edgeBottomLeft.y <= gridBottomLeft.y && edgeTopRight.y >= gridTopRight.y)
+                            (edgeBottomLeftX == gridBottomLeftX || edgeTopRightX == gridTopRightX)
+                            && edgeBottomLeftY <= gridBottomLeftY && edgeTopRightY >= gridTopRightY)
                         {
                             // edge是格子的左右两边之一
                         }
@@ -303,20 +369,20 @@ namespace AillieoUtils
                         {
                             case 1:
                             case 5:
-                                criticalVert = gridBottomRight;
+                                criticalVert = new Vector2(gridTopRightX, gridBottomLeftY);
                                 break;
                             case 2:
                             case 6:
-                                criticalVert = gridTopRight;
+                                criticalVert = new Vector2(gridTopRightX, gridTopRightY);
                                 break;
 
                             case 3:
                             case 7:
-                                criticalVert = gridTopLeft;
+                                criticalVert = new Vector2(gridBottomLeftX, gridTopRightY);
                                 break;
                             case 4:
                             case 8:
-                                criticalVert = gridBottomLeft;
+                                criticalVert = new Vector2(gridBottomLeftX, gridBottomLeftY);
                                 break;
                         }
 
@@ -509,36 +575,42 @@ namespace AillieoUtils
 
         private static float MaxAreaInHistogram(float[] xs, float y, float[] heights, out Rect rect)
         {
-            rect = default;
-
-            var stack = new Stack<int>();
-            float maxArea = 0;
-
-            var columns = heights.Length;
-
-            // 为方便加一个哨兵柱子
-            for (var k = 0; k <= columns; k++)
+            try
             {
-                var currentHeight = (k < columns) ? heights[k] : 0;
+                rect = default;
 
-                while (stack.Count > 0 && currentHeight < heights[stack.Peek()])
+                float maxArea = 0;
+
+                var columns = heights.Length;
+
+                // 为方便加一个哨兵柱子
+                for (var k = 0; k <= columns; k++)
                 {
-                    var h = heights[stack.Pop()];
-                    var rightIndex = k;
-                    var leftIndex = stack.Count > 0 ? stack.Peek() + 1 : 0;
-                    var width = xs[rightIndex] - xs[leftIndex];
-                    var area = h * width;
-                    if (area > maxArea)
+                    var currentHeight = (k < columns) ? heights[k] : 0;
+
+                    while (stackReusable.Count > 0 && currentHeight < heights[stackReusable.Peek()])
                     {
-                        maxArea = area;
-                        rect = new Rect(xs[leftIndex], y, width, h);
+                        var h = heights[stackReusable.Pop()];
+                        var rightIndex = k;
+                        var leftIndex = stackReusable.Count > 0 ? stackReusable.Peek() + 1 : 0;
+                        var width = xs[rightIndex] - xs[leftIndex];
+                        var area = h * width;
+                        if (area > maxArea)
+                        {
+                            maxArea = area;
+                            rect = new Rect(xs[leftIndex], y, width, h);
+                        }
                     }
+
+                    stackReusable.Push(k);
                 }
 
-                stack.Push(k);
+                return maxArea;
             }
-
-            return maxArea;
+            finally
+            {
+                stackReusable.Clear();
+            }
         }
     }
 }

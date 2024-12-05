@@ -394,7 +394,7 @@ Camera:
   m_Enabled: 1
   serializedVersion: 2
   m_ClearFlags: 1
-  m_BackGroundColor: {r: 0.2784314, g: 0.2784314, b: 0.2784314, a: 1}
+  m_BackGroundColor: {r: 0, g: 0, b: 0, a: 1}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
   m_FOVAxisMode: 0
@@ -1927,8 +1927,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cc18fe3aabf14f845b9f0d4310fdbc41, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subDivisions: 2
-  drawGraph: 0
+  subdivideMode: 10
+  drawGraph: 1
 --- !u!120 &2086918175
 LineRenderer:
   serializedVersion: 2
@@ -1972,10 +1972,10 @@ LineRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_Positions:
-  - {x: 4.14, y: 6.75, z: 0}
-  - {x: 6.69, y: 8.78, z: 0}
+  - {x: 4, y: 7, z: 0}
+  - {x: 7, y: 9, z: 0}
   - {x: 11, y: 8, z: 0}
-  - {x: 15.43, y: 2.38, z: 0}
+  - {x: 15, y: 2, z: 0}
   - {x: 14, y: -2, z: 0}
   - {x: 10, y: -7, z: 0}
   - {x: 6, y: -10, z: 0}
@@ -1983,11 +1983,11 @@ LineRenderer:
   - {x: -2, y: -10, z: 0}
   - {x: -5, y: -6, z: 0}
   - {x: -8, y: -2, z: 0}
-  - {x: -8.91, y: 2.9, z: 0}
+  - {x: -9, y: 3, z: 0}
   - {x: -6, y: 7, z: 0}
-  - {x: -2.83, y: 8.78, z: 0}
+  - {x: -3, y: 9, z: 0}
   - {x: 0, y: 8, z: 0}
-  - {x: 2.04, y: 5.31, z: 0}
+  - {x: 2, y: 5, z: 0}
   m_Parameters:
     serializedVersion: 3
     widthMultiplier: 0.1
