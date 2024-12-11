@@ -1,0 +1,16 @@
+{
+    "name": "com.aillieo.rect-in-poly",
+    "displayName": "AillieoUtils RectInPoly",
+    "description": "AillieoUtils RectInPoly",
+    "version": "1.0.0",
+    "unity": "2022.3",
+    "license": "MIT",
+    "dependencies": {
+
+    },
+    "author": {
+        "name": "Aillieo",
+        "email": "aillieo@163.com",
+        "url": "https://github.com/aillieo"
+    }
+}
