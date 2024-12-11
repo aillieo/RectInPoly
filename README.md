@@ -35,9 +35,6 @@ RectInPoly can be installed via the Unity Package Manager. Alternatively, you ca
 To compute the largest inscribed rectangle, use the following code:
 
 ```csharp
-using UnityEngine;
-using System.Collections.Generic;
-
 var polygon = new List<Vector2> {
     new Vector2(0, 0),
     new Vector2(4, 0),
@@ -51,7 +48,15 @@ Debug.Log($"Largest Inscribed Rectangle: {rect}");
 
 ### Advanced Usage
 
-In some cases (e.g., when the polygon has very few vertices or uneven vertex distribution), the default subdivide method may not yield optimal results. To handle this, `LargestRectInPolygon.Find` has an overload that allows you to specify a custom subdivision method, see the sample case for details. 
+In some cases (e.g., when the polygon has very few vertices or uneven vertex distribution), the default subdivide method may not yield optimal results. To handle this, `LargestRectInPolygon.Find` has an overload that allows you to specify a custom subdivision method, see the sample case for details.
+
+| ![image](./ScreenShots/image_0.png) | ![image](./ScreenShots/image_1.png) | ![image](./ScreenShots/image_2.png) |
+| :-: | :-: | :-: |
+| No subdivision | Subdivision by crossing points twice | Subdivision by midpoints once |
+
+| ![image](./ScreenShots/image_3.png) | ![image](./ScreenShots/image_4.png) 
+| :-: | :-: |
+| No subdivision | Subdivision by crossing points twice |
 
 ### Samples
 
