@@ -10,6 +10,9 @@ namespace AillieoUtils
     using System.Runtime.CompilerServices;
     using UnityEngine;
 
+    /// <summary>
+    /// Provides methods to find the largest rectangle that can fit inside a given polygon.
+    /// </summary>
     public static class LargestRectInPolygon
     {
         private const byte intersectFlag = 0b0010;
@@ -19,48 +22,173 @@ namespace AillieoUtils
         private static readonly Stack<int> stackReusable = new Stack<int>();
         private static readonly Stack<List<float>> listsReusable = new Stack<List<float>>();
 
+        /// <summary>
+        /// Specifies the subdivision modes used for grid calculations in polygons.
+        /// Each value is a combination of 'M' (MidPoint) and 'C' (CrossingPoint) indicating the subdivision strategy.
+        /// </summary>
         public enum SubdivideMode
         {
+            /// <summary>
+            /// No subdivision will be performed on the grid.
+            /// </summary>
             None = 0,
+
+            /// <summary>
+            /// M - Subdivide using midpoints.
+            /// </summary>
             MidPoint = 0b01,
+
+            /// <summary>
+            /// C - Subdivide using crossing points.
+            /// </summary>
             CrossingPoint = 0b10,
 
+            /// <summary>
+            /// MM - Twice MidPoint subdivision.
+            /// </summary>
             MM = MidPoint | MidPoint << 2,
+
+            /// <summary>
+            /// MC - MidPoint then CrossingPoint.
+            /// </summary>
             MC = MidPoint | CrossingPoint << 2,
+
+            /// <summary>
+            /// CM - CrossingPoint then MidPoint.
+            /// </summary>
             CM = CrossingPoint | MidPoint << 2,
+
+            /// <summary>
+            /// CC - Twice CrossingPoint subdivision.
+            /// </summary>
             CC = CrossingPoint | CrossingPoint << 2,
 
+            /// <summary>
+            /// MMM - MidPoint then MidPoint then MidPoint.
+            /// </summary>
             MMM = MidPoint | MidPoint << 2 | MidPoint << 4,
+
+            /// <summary>
+            /// MCM - MidPoint then CrossingPoint then MidPoint.
+            /// </summary>
             MCM = MidPoint | CrossingPoint << 2 | MidPoint << 4,
+
+            /// <summary>
+            /// CMM - CrossingPoint then MidPoint then MidPoint.
+            /// </summary>
             CMM = CrossingPoint | MidPoint << 2 | MidPoint << 4,
+
+            /// <summary>
+            /// CCM - CrossingPoint then CrossingPoint then MidPoint.
+            /// </summary>
             CCM = CrossingPoint | CrossingPoint << 2 | MidPoint << 4,
 
+            /// <summary>
+            /// MMC - MidPoint then MidPoint then CrossingPoint.
+            /// </summary>
             MMC = MidPoint | MidPoint << 2 | CrossingPoint << 4,
+
+            /// <summary>
+            /// MCC - MidPoint then CrossingPoint then CrossingPoint.
+            /// </summary>
             MCC = MidPoint | CrossingPoint << 2 | CrossingPoint << 4,
+
+            /// <summary>
+            /// CMC - CrossingPoint then MidPoint then CrossingPoint.
+            /// </summary>
             CMC = CrossingPoint | MidPoint << 2 | CrossingPoint << 4,
+
+            /// <summary>
+            /// CCC - CrossingPoint then CrossingPoint then CrossingPoint.
+            /// </summary>
             CCC = CrossingPoint | CrossingPoint << 2 | CrossingPoint << 4,
 
+            /// <summary>
+            /// MMMM - MidPoint then MidPoint then MidPoint then MidPoint.
+            /// </summary>
             MMMM = MidPoint | MidPoint << 2 | MidPoint << 4 | MidPoint << 6,
+
+            /// <summary>
+            /// MCMM - MidPoint then CrossingPoint then MidPoint then MidPoint.
+            /// </summary>
             MCMM = MidPoint | CrossingPoint << 2 | MidPoint << 4 | MidPoint << 6,
+
+            /// <summary>
+            /// CMMM - CrossingPoint then MidPoint then MidPoint then MidPoint.
+            /// </summary>
             CMMM = CrossingPoint | MidPoint << 2 | MidPoint << 4 | MidPoint << 6,
+
+            /// <summary>
+            /// CCMM - CrossingPoint then CrossingPoint then MidPoint then MidPoint.
+            /// </summary>
             CCMM = CrossingPoint | CrossingPoint << 2 | MidPoint << 4 | MidPoint << 6,
 
+            /// <summary>
+            /// MMCM - MidPoint then MidPoint then CrossingPoint then MidPoint.
+            /// </summary>
             MMCM = MidPoint | MidPoint << 2 | CrossingPoint << 4 | MidPoint << 6,
+
+            /// <summary>
+            /// MCCM - MidPoint then CrossingPoint then CrossingPoint then MidPoint.
+            /// </summary>
             MCCM = MidPoint | CrossingPoint << 2 | CrossingPoint << 4 | MidPoint << 6,
+
+            /// <summary>
+            /// CMCM - CrossingPoint then MidPoint then CrossingPoint then MidPoint.
+            /// </summary>
             CMCM = CrossingPoint | MidPoint << 2 | CrossingPoint << 4 | MidPoint << 6,
+
+            /// <summary>
+            /// CCCM - CrossingPoint then CrossingPoint then CrossingPoint then MidPoint.
+            /// </summary>
             CCCM = CrossingPoint | CrossingPoint << 2 | CrossingPoint << 4 | MidPoint << 6,
 
+            /// <summary>
+            /// MMMC - MidPoint then MidPoint then MidPoint then CrossingPoint.
+            /// </summary>
             MMMC = MidPoint | MidPoint << 2 | MidPoint << 4 | CrossingPoint << 6,
+
+            /// <summary>
+            /// MCMC - MidPoint then CrossingPoint then MidPoint then CrossingPoint.
+            /// </summary>
             MCMC = MidPoint | CrossingPoint << 2 | MidPoint << 4 | CrossingPoint << 6,
+
+            /// <summary>
+            /// CMMC - CrossingPoint then MidPoint then MidPoint then CrossingPoint.
+            /// </summary>
             CMMC = CrossingPoint | MidPoint << 2 | MidPoint << 4 | CrossingPoint << 6,
+
+            /// <summary>
+            /// CCMC - CrossingPoint then CrossingPoint then MidPoint then CrossingPoint.
+            /// </summary>
             CCMC = CrossingPoint | CrossingPoint << 2 | MidPoint << 4 | CrossingPoint << 6,
 
+            /// <summary>
+            /// MMCC - MidPoint then MidPoint then CrossingPoint then CrossingPoint.
+            /// </summary>
             MMCC = MidPoint | MidPoint << 2 | CrossingPoint << 4 | CrossingPoint << 6,
+
+            /// <summary>
+            /// MCCC - MidPoint then CrossingPoint then CrossingPoint then CrossingPoint.
+            /// </summary>
             MCCC = MidPoint | CrossingPoint << 2 | CrossingPoint << 4 | CrossingPoint << 6,
+
+            /// <summary>
+            /// CMCC - CrossingPoint then MidPoint then CrossingPoint then CrossingPoint.
+            /// </summary>
             CMCC = CrossingPoint | MidPoint << 2 | CrossingPoint << 4 | CrossingPoint << 6,
+
+            /// <summary>
+            /// CCCC - CrossingPoint then CrossingPoint then CrossingPoint then CrossingPoint.
+            /// </summary>
             CCCC = CrossingPoint | CrossingPoint << 2 | CrossingPoint << 4 | CrossingPoint << 6,
         }
 
+        /// <summary>
+        /// Determines if the points of the polygon are ordered in a clockwise direction.
+        /// </summary>
+        /// <param name="points">A list of points representing the vertices of the polygon.</param>
+        /// <returns>True if the polygon's points are in clockwise order; otherwise, false.</returns>
         public static bool IsClockwise(IList<Vector2> points)
         {
             float sum = 0;
@@ -76,6 +204,12 @@ namespace AillieoUtils
             return sum < 0;
         }
 
+        /// <summary>
+        /// Validates whether the given points form a valid polygon.
+        /// A valid polygon must have at least three vertices and must not self-intersect.
+        /// </summary>
+        /// <param name="points">A list of points representing the vertices of the polygon.</param>
+        /// <returns>True if the polygon is valid; otherwise, false.</returns>
         public static bool IsValidPolygon(IList<Vector2> points)
         {
             var n = points.Count;
@@ -112,11 +246,23 @@ namespace AillieoUtils
             return true;
         }
 
+        /// <summary>
+        /// Finds the largest rectangle that can fit inside the specified polygon.
+        /// Defaults to using the Twice CrossingPoint subdivision mode.
+        /// </summary>
+        /// <param name="polygon">A list of points representing the vertices of the polygon.</param>
+        /// <returns>The largest rectangle that fits within the polygon.</returns>
         public static Rect Find(IList<Vector2> polygon)
         {
             return Find(polygon, SubdivideMode.CC);
         }
 
+        /// <summary>
+        /// Finds the largest rectangle that can fit inside the specified polygon using the specified subdivision mode.
+        /// </summary>
+        /// <param name="polygon">A list of points representing the vertices of the polygon.</param>
+        /// <param name="subdivideMode">The mode of subdivision to use for calculations.</param>
+        /// <returns>The largest rectangle that fits within the polygon.</returns>
         public static Rect Find(IList<Vector2> polygon, SubdivideMode subdivideMode)
         {
             CalculateGrids(polygon, subdivideMode, out var xCoords, out var yCoords);
@@ -125,11 +271,31 @@ namespace AillieoUtils
             return rect;
         }
 
+        /// <summary>
+        /// Finds the largest rectangle that can fit inside the specified polygon.
+        /// Outputs the x-coordinates, y-coordinates, and graph data for visualization.
+        /// Defaults to using the Twice CrossingPoint subdivision mode.
+        /// </summary>
+        /// <param name="polygon">A list of points representing the vertices of the polygon.</param>
+        /// <param name="xCoords">Output array of x-coordinates of graph used in calculations.</param>
+        /// <param name="yCoords">Output array of y-coordinates of graph used in calculations.</param>
+        /// <param name="graph">Output graph data used for visualization.</param>
+        /// <returns>The largest rectangle that fits within the polygon.</returns>
         public static Rect Find(IList<Vector2> polygon, out float[] xCoords, out float[] yCoords, out byte[,] graph)
         {
             return Find(polygon, SubdivideMode.CC, out xCoords, out yCoords, out graph);
         }
 
+        /// <summary>
+        /// Finds the largest rectangle that can fit inside the specified polygon using the specified subdivision mode.
+        /// Outputs the x-coordinates, y-coordinates, and graph data for visualization.
+        /// </summary>
+        /// <param name="polygon">A list of points representing the vertices of the polygon.</param>
+        /// <param name="subdivideMode">The mode of subdivision to use for calculations.</param>
+        /// <param name="xCoords">Output array of x-coordinates of graph used in calculations.</param>
+        /// <param name="yCoords">Output array of y-coordinates of graph used in calculations.</param>
+        /// <param name="graph">Output graph data used for visualization.</param>
+        /// <returns>The largest rectangle that fits within the polygon.</returns>
         public static Rect Find(IList<Vector2> polygon, SubdivideMode subdivideMode, out float[] xCoords, out float[] yCoords, out byte[,] graph)
         {
             CalculateGrids(polygon, subdivideMode, out xCoords, out yCoords);
